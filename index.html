@@ -629,11 +629,11 @@ async function startSearch() {
     ? live.filter(p => !p.year || p.year >= cutoffYear)
     : live;
 
-  // Rank by relevance, drop irrelevant (score 0), keep top maxCount
+  // Rank by relevance; only hard-drop untrusted web results with zero keyword overlap
   const kwWords = raw.toLowerCase().replace(/\bpdf\b/gi,'').trim().split(/\s+/).filter(Boolean);
   const ranked = yearFiltered
     .map(p => ({ ...p, _score: scoreRelevance(p, kwWords) }))
-    .filter(p => p._score > 0)
+    .filter(p => p.trusted || p._score > 0)
     .sort((a, b) => b._score - a._score)
     .slice(0, maxCount);
 
