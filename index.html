@@ -216,6 +216,13 @@
       <option value="30">Stop at 30 PDFs</option>
       <option value="50">Stop at 50 PDFs</option>
     </select>
+    <select id="timeRange">
+      <option value="0">Any time</option>
+      <option value="1">Past year</option>
+      <option value="3">Past 3 years</option>
+      <option value="5">Past 5 years</option>
+      <option value="10">Past 10 years</option>
+    </select>
     <button class="btn-primary" id="searchBtn" onclick="startSearch()">Search</button>
     <button class="btn-secondary" onclick="clearSearch()">Clear</button>
   </div>
@@ -439,11 +446,12 @@ async function isLive(url) {
 // ── Search sources ────────────────────────────────────────────────────────────
 const SEARCH_SOURCES = [
   {
-    async run(keyword, need) {
+    async run(keyword, need, minYear = 0) {
+      const yearParam = minYear > 0 ? `&year=${minYear}-` : '';
       const r = await fetch(
         `https://api.semanticscholar.org/graph/v1/paper/search` +
         `?query=${encodeURIComponent(keyword)}&limit=${Math.min(need,100)}` +
-        `&fields=title,authors,openAccessPdf,year`,
+        `&fields=title,authors,openAccessPdf,year${yearParam}`,
         { signal: AbortSignal.timeout(9000) }
       );
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -454,12 +462,12 @@ const SEARCH_SOURCES = [
           url: p.openAccessPdf.url,
           title: p.title || 'Untitled',
           meta: [(p.authors||[]).slice(0,2).map(a=>a.name).join(', '), p.year].filter(Boolean).join(' · '),
-          source: 'Semantic Scholar', trusted: true
+          source: 'Semantic Scholar', trusted: true, year: p.year || null
         }));
     }
   },
   {
-    async run(keyword, need) {
+    async run(keyword, need, minYear = 0) {
       const r = await fetch(
         `https://export.arxiv.org/api/query` +
         `?search_query=all:${encodeURIComponent(keyword)}` +
@@ -473,16 +481,19 @@ const SEARCH_SOURCES = [
         const rawId = e.querySelector('id')?.textContent?.trim() || '';
         const title  = e.querySelector('title')?.textContent?.trim() || 'Untitled';
         const authors = [...e.querySelectorAll('author name')].slice(0,2).map(a=>a.textContent).join(', ');
+        const published = e.querySelector('published')?.textContent?.trim() || '';
+        const year = published ? new Date(published).getFullYear() : null;
         const pdfUrl = rawId.replace('http://arxiv.org/abs/','https://arxiv.org/pdf/')
                             .replace('https://arxiv.org/abs/','https://arxiv.org/pdf/') + '.pdf';
-        return { url: pdfUrl, title, meta: authors, source: 'arXiv', trusted: true };
+        return { url: pdfUrl, title, meta: [authors, year].filter(Boolean).join(' · '), source: 'arXiv', trusted: true, year };
       }).filter(p => p.url.includes('arxiv.org/pdf'));
     }
   },
   {
-    async run(keyword, need) {
+    async run(keyword, need, minYear = 0) {
       // Search IA, then resolve each item's real PDF filename via metadata API
-      const q = encodeURIComponent(`${keyword} AND mediatype:texts AND format:PDF`);
+      const yearFilter = minYear > 0 ? ` AND year:[${minYear} TO 9999]` : '';
+      const q = encodeURIComponent(`${keyword} AND mediatype:texts AND format:PDF${yearFilter}`);
       const r = await fetch(
         `https://archive.org/advancedsearch.php?q=${q}` +
         `&fl[]=identifier,title,creator,year&rows=${Math.min(need,10)}&output=json`,
@@ -505,7 +516,8 @@ const SEARCH_SOURCES = [
             url: `https://archive.org/download/${doc.identifier}/${encodeURIComponent(pdf.name)}`,
             title: doc.title || doc.identifier,
             meta: [doc.creator, doc.year].filter(Boolean).join(' · '),
-            source: 'Internet Archive', trusted: true
+            source: 'Internet Archive', trusted: true,
+            year: doc.year ? parseInt(doc.year) : null
           };
         } catch { return null; }
       }));
@@ -513,7 +525,7 @@ const SEARCH_SOURCES = [
     }
   },
   {
-    async run(keyword, need) {
+    async run(keyword, need, minYear = 0) {
       const html = await Promise.race([
         fetchHtml(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(keyword + ' filetype:pdf')}`),
         new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 7000))
@@ -530,7 +542,7 @@ const SEARCH_SOURCES = [
         if (!isPdf(clean) || seen.has(clean)) continue;
         if (/duckduckgo\.com|bing\.com|google\.com/i.test(clean)) continue;
         seen.add(clean);
-        results.push({ url: clean, title: a.textContent.trim() || filename(clean), meta: '', source: 'Web', trusted: false });
+        results.push({ url: clean, title: a.textContent.trim() || filename(clean), meta: '', source: 'Web', trusted: false, year: null });
         if (results.length >= need) break;
       }
       return results;
@@ -549,15 +561,24 @@ function hideSearchStatus() {
 }
 
 function scoreRelevance(pdf, keywords) {
-  const title = pdf.title.toLowerCase();
-  let score = 0;
+  if (!keywords.length) return 1;
+  const title = (pdf.title || '').toLowerCase();
+  const meta  = (pdf.meta  || '').toLowerCase();
+  let score = 0, titleHits = 0;
   const phrase = keywords.join(' ');
-  if (title.includes(phrase)) score += 30;
+
+  if (title.includes(phrase)) score += 50;
+  else if (meta.includes(phrase)) score += 15;
+
   for (const w of keywords) {
-    if (title.includes(w)) score += 10;
-    if (title.startsWith(w)) score += 5;
+    if (w.length < 2) continue;
+    const re = new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')}`, 'i');
+    if (re.test(title))     { score += 15; titleHits++; }
+    else if (re.test(meta)) { score += 4; }
   }
-  return score;
+
+  if (titleHits === keywords.length && keywords.length > 0) score += 20;
+  return score; // 0 = no keyword overlap — filtered out
 }
 
 async function startSearch() {
@@ -565,7 +586,9 @@ async function startSearch() {
   if (!raw) { alert('Enter a keyword to search for.'); return; }
   const keyword = /\bpdf\b/i.test(raw) ? raw : raw + ' pdf';
   const maxCount = parseInt(document.getElementById('maxPdfs').value);
-  const fetchCount = Math.round(maxCount * 1.5) + 5; // fetch more, then trim to best
+  const timeRangeYears = parseInt(document.getElementById('timeRange').value);
+  const cutoffYear = timeRangeYears > 0 ? new Date().getFullYear() - timeRangeYears : 0;
+  const fetchCount = Math.round(maxCount * 1.5) + 5;
 
   searchAbort = false;
   searchPdfs = [];
@@ -583,7 +606,7 @@ async function startSearch() {
     const pct = 10 + Math.round((si / total) * 60);
     setSearchStatus(`Searching… ${candidates.length} found so far`, pct);
     try {
-      const results = await SEARCH_SOURCES[si].run(keyword, fetchCount);
+      const results = await SEARCH_SOURCES[si].run(keyword, fetchCount, cutoffYear);
       for (const pdf of results) {
         if (!seen.has(pdf.url)) { seen.add(pdf.url); candidates.push(pdf); }
       }
@@ -601,10 +624,16 @@ async function startSearch() {
   );
   const live = checked.filter(Boolean);
 
-  // Rank by relevance, keep top maxCount
+  // Apply time filter (client-side safety net for sources without API-level filtering)
+  const yearFiltered = cutoffYear > 0
+    ? live.filter(p => !p.year || p.year >= cutoffYear)
+    : live;
+
+  // Rank by relevance, drop irrelevant (score 0), keep top maxCount
   const kwWords = raw.toLowerCase().replace(/\bpdf\b/gi,'').trim().split(/\s+/).filter(Boolean);
-  const ranked = live
+  const ranked = yearFiltered
     .map(p => ({ ...p, _score: scoreRelevance(p, kwWords) }))
+    .filter(p => p._score > 0)
     .sort((a, b) => b._score - a._score)
     .slice(0, maxCount);
 
