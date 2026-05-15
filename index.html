@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PDF Finder</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      min-height: 100vh;
+      padding: 32px 16px 80px;
+    }
+
+    .container { max-width: 820px; margin: 0 auto; }
+
+    h1 { font-size: 1.5rem; font-weight: 600; color: #f1f5f9; margin-bottom: 4px; }
+    h2 { font-size: 1.2rem; font-weight: 600; color: #f1f5f9; margin-bottom: 4px; }
+    .subtitle { color: #64748b; font-size: 0.85rem; margin-bottom: 22px; }
+
+    .section-divider { border: none; border-top: 1px solid #1e2a3a; margin: 40px 0; }
+
+    textarea, input[type="text"] {
+      width: 100%;
+      background: #1e2130;
+      border: 1px solid #2d3550;
+      border-radius: 10px;
+      color: #e2e8f0;
+      font-size: 0.88rem;
+      padding: 12px 14px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    textarea { height: 120px; resize: vertical; font-family: 'Courier New', monospace; }
+    textarea:focus, input:focus { border-color: #6366f1; }
+    textarea::placeholder, input::placeholder { color: #3d4a66; }
+
+    button {
+      padding: 9px 22px;
+      border: none; border-radius: 8px;
+      font-size: 0.88rem; font-weight: 500;
+      cursor: pointer; transition: all 0.18s;
+    }
+    .btn-primary { background: #6366f1; color: #fff; }
+    .btn-primary:hover { background: #4f52e0; }
+    .btn-primary:disabled { background: #2d2f5e; color: #555; cursor: not-allowed; }
+    .btn-secondary { background: #1e2130; color: #94a3b8; border: 1px solid #2d3550; }
+    .btn-secondary:hover { background: #252a3d; color: #e2e8f0; }
+    .btn-sm { padding: 5px 12px; font-size: 0.78rem; border-radius: 6px; }
+
+    .controls { display: flex; gap: 10px; margin-top: 10px; align-items: center; }
+    .hint { font-size: 0.78rem; color: #3d4a66; margin-left: auto; }
+
+    select {
+      background: #1e2130;
+      border: 1px solid #2d3550;
+      border-radius: 8px;
+      color: #e2e8f0;
+      font-size: 0.85rem;
+      padding: 9px 12px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    /* ── Cards ── */
+    .card {
+      background: #1e2130;
+      border: 1px solid #2d3550;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .card-header {
+      padding: 12px 16px;
+      display: flex; align-items: center; gap: 10px;
+      border-bottom: 1px solid #2d3550;
+    }
+    .card-url {
+      font-size: 0.78rem; color: #64748b;
+      font-family: 'Courier New', monospace;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;
+    }
+    .card-body { padding: 12px 16px; }
+
+    .badge {
+      font-size: 0.72rem; padding: 2px 9px;
+      border-radius: 20px; font-weight: 500; white-space: nowrap;
+    }
+    .badge-scanning { background: #1e3a5f; color: #60a5fa; }
+    .badge-done     { background: #14532d; color: #4ade80; }
+    .badge-none     { background: #2d2010; color: #f59e0b; }
+    .badge-error    { background: #3b1515; color: #f87171; }
+
+    .spinner {
+      width: 13px; height: 13px; flex-shrink: 0;
+      border: 2px solid #334155; border-top-color: #6366f1;
+      border-radius: 50%; animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── PDF rows ── */
+    .pdf-list { display: flex; flex-direction: column; gap: 8px; }
+    .pdf-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 9px 12px;
+      background: #151924; border: 1px solid #252d42; border-radius: 8px;
+      transition: border-color 0.18s;
+    }
+    .pdf-row:hover { border-color: #6366f1; }
+    .pdf-icon { font-size: 1.2rem; flex-shrink: 0; }
+    .pdf-info { flex: 1; min-width: 0; }
+    .pdf-title {
+      font-size: 0.86rem; color: #e2e8f0; font-weight: 500;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .pdf-url {
+      font-size: 0.72rem; color: #3d4a66;
+      font-family: 'Courier New', monospace;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px;
+    }
+    .pdf-source {
+      font-size: 0.7rem; color: #4b5563; margin-top: 2px;
+    }
+    .pdf-actions { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
+    input[type="checkbox"] {
+      width: 16px; height: 16px; accent-color: #6366f1; cursor: pointer; flex-shrink: 0;
+    }
+
+    /* ── Bulk bar ── */
+    .bulk-bar {
+      position: sticky; bottom: 16px;
+      margin-top: 16px; padding: 12px 18px;
+      background: #1a1f35; border: 1px solid #6366f1;
+      border-radius: 12px;
+      display: flex; align-items: center; gap: 14px;
+      box-shadow: 0 4px 24px rgba(99,102,241,0.2);
+    }
+    .bulk-count { font-size: 0.9rem; color: #94a3b8; flex: 1; }
+    .bulk-count span { color: #6366f1; font-weight: 600; }
+
+    /* ── Status messages ── */
+    .empty-msg { color: #3d4a66; font-size: 0.85rem; }
+    .error-msg { font-size: 0.82rem; color: #f87171; }
+
+    /* ── Search section ── */
+    .search-row {
+      display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    }
+    .search-row input { flex: 1; min-width: 220px; }
+
+    .search-status {
+      margin-top: 16px; padding: 14px 16px;
+      background: #1e2130; border: 1px solid #2d3550; border-radius: 10px;
+      display: flex; align-items: center; gap: 10px;
+      font-size: 0.88rem; color: #64748b;
+    }
+
+    .search-results { margin-top: 16px; display: flex; flex-direction: column; gap: 0; }
+
+    .result-count {
+      font-size: 0.82rem; color: #64748b; margin-bottom: 12px;
+    }
+    .result-count span { color: #a5b4fc; font-weight: 600; }
+
+    .progress-bar-wrap {
+      height: 3px; background: #1e2130; border-radius: 2px;
+      margin-top: 10px; overflow: hidden;
+    }
+    .progress-bar {
+      height: 100%; background: linear-gradient(90deg,#6366f1,#a78bfa);
+      border-radius: 2px; transition: width 0.4s ease;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <!-- ══════════ SECTION 1: Scan URLs ══════════ -->
+  <h1>PDF Finder</h1>
+  <p class="subtitle">Two ways to find PDFs: paste URLs to scan, or search by keyword below.</p>
+
+  <h2 style="margin-bottom:4px">Scan URLs for PDFs</h2>
+  <p class="subtitle">Paste page URLs — each will be scanned for downloadable PDF links.</p>
+
+  <textarea id="urlInput" placeholder="https://example.com/page&#10;https://en.wikipedia.org/wiki/Machine_learning&#10;https://example.com/report.pdf"></textarea>
+
+  <div class="controls">
+    <button class="btn-primary" id="scanBtn" onclick="startScan()">Scan for PDFs</button>
+    <button class="btn-secondary" onclick="clearScan()">Clear</button>
+    <span class="hint">One URL per line</span>
+  </div>
+
+  <div id="scanResults" style="margin-top:20px;display:flex;flex-direction:column;gap:12px"></div>
+
+  <div class="bulk-bar" id="scanBulkBar" style="display:none">
+    <div class="bulk-count"><span id="scanSelectedCount">0</span> selected</div>
+    <button class="btn-primary" onclick="downloadSelected('scan')">Download Selected</button>
+  </div>
+
+  <hr class="section-divider">
+
+  <!-- ══════════ SECTION 2: Keyword Search ══════════ -->
+  <h2 style="margin-bottom:4px">Search PDFs by Keyword</h2>
+  <p class="subtitle">Enter a topic — the web is searched for matching PDFs. Choose how many to find, then pick which to download.</p>
+
+  <div class="search-row">
+    <input type="text" id="searchKeyword" placeholder="e.g. machine learning tutorial, climate report 2024…"
+           onkeydown="if(event.key==='Enter') startSearch()">
+    <select id="maxPdfs">
+      <option value="5">Stop at 5 PDFs</option>
+      <option value="10" selected>Stop at 10 PDFs</option>
+      <option value="15">Stop at 15 PDFs</option>
+      <option value="20">Stop at 20 PDFs</option>
+      <option value="30">Stop at 30 PDFs</option>
+      <option value="50">Stop at 50 PDFs</option>
+    </select>
+    <button class="btn-primary" id="searchBtn" onclick="startSearch()">Search</button>
+    <button class="btn-secondary" onclick="clearSearch()">Clear</button>
+  </div>
+
+  <div id="searchStatus" style="display:none" class="search-status">
+    <div class="spinner"></div>
+    <div>
+      <div id="searchStatusMsg">Searching…</div>
+      <div class="progress-bar-wrap" style="width:200px">
+        <div class="progress-bar" id="searchProgressBar" style="width:0%"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="searchResultsArea" style="margin-top:4px"></div>
+
+  <div class="bulk-bar" id="searchBulkBar" style="display:none">
+    <div class="bulk-count"><span id="searchSelectedCount">0</span> selected</div>
+    <button class="btn-primary" onclick="downloadSelected('search')">Download Selected</button>
+    <button class="btn-secondary btn-sm" onclick="selectAll()">Select All</button>
+  </div>
+
+</div>
+<script>
+// ─────────────────────────────────────────────
+//  Shared helpers
+// ─────────────────────────────────────────────
+const PROXIES = [
+  {
+    build: u => `https://api.allorigins.win/get?url=${encodeURIComponent(u)}`,
+    parse: async r => { const j = await r.json(); return j.contents || ''; }
+  },
+  {
+    build: u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+    parse: async r => r.text()
+  },
+  {
+    build: u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
+    parse: async r => r.text()
+  },
+  {
+    build: u => `https://thingproxy.freeboard.io/fetch/${u}`,
+    parse: async r => r.text()
+  }
+];
+
+async function fetchHtml(url) {
+  let lastErr;
+  for (const proxy of PROXIES) {
+    try {
+      const r = await fetch(proxy.build(url), { signal: AbortSignal.timeout(10000) });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const html = await proxy.parse(r);
+      if (html && html.length > 100) return html;
+    } catch (e) { lastErr = e; }
+  }
+  throw new Error(lastErr?.message || 'All proxies failed');
+}
+
+function isPdf(url) { return /\.pdf(\?.*)?$/i.test(url); }
+
+function resolveUrl(base, href) {
+  try { return new URL(href, base).href; } catch { return null; }
+}
+
+function filename(url) {
+  try {
+    const parts = new URL(url).pathname.split('/');
+    const last = parts[parts.length - 1];
+    return last || 'document.pdf';
+  } catch { return 'document.pdf'; }
+}
+
+function downloadOne(url, name) {
+  const a = document.createElement('a');
+  a.href = url; a.download = name || 'document.pdf'; a.target = '_blank';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+}
+
+function downloadSelected(section) {
+  const boxes = [...document.querySelectorAll(`#${section}CheckGroup input[type=checkbox]:checked`)];
+  if (!boxes.length) { alert('Select at least one PDF.'); return; }
+  boxes.forEach((cb, i) => setTimeout(() => downloadOne(cb.dataset.url, cb.dataset.name), i * 350));
+}
+
+// ─────────────────────────────────────────────
+//  Section 1 — URL Scanner
+// ─────────────────────────────────────────────
+let scanPdfs = [];
+
+function parseUrls() {
+  return [...new Set(
+    document.getElementById('urlInput').value
+      .split('\n').map(u => u.trim())
+      .filter(u => u.startsWith('http://') || u.startsWith('https://'))
+  )];
+}
+
+function findPdfsInPage(html, base) {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const seen = new Set(); const list = [];
+  for (const a of doc.querySelectorAll('a[href]')) {
+    const href = a.getAttribute('href');
+    if (!href || !isPdf(href)) continue;
+    const resolved = resolveUrl(base, href);
+    if (!resolved || seen.has(resolved)) continue;
+    seen.add(resolved);
+    list.push({ url: resolved, title: a.textContent.trim() || filename(resolved) });
+  }
+  return list;
+}
+
+function makeScanCard(url, index) {
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.innerHTML = `
+    <div class="card-header">
+      <div class="spinner" id="sc-spin-${index}"></div>
+      <div class="card-url" title="${url}">${url}</div>
+      <span class="badge badge-scanning" id="sc-badge-${index}">Scanning…</span>
+    </div>
+    <div class="card-body" id="sc-body-${index}"><div class="empty-msg">Fetching…</div></div>`;
+  return card;
+}
+
+function renderScanCard(index, pdfs) {
+  document.getElementById(`sc-spin-${index}`).style.display = 'none';
+  const badge = document.getElementById(`sc-badge-${index}`);
+  const body  = document.getElementById(`sc-body-${index}`);
+
+  if (!pdfs.length) {
+    badge.className = 'badge badge-none'; badge.textContent = 'No PDFs';
+    body.innerHTML = '<div class="empty-msg">No downloadable PDF links found on this page.</div>';
+    return;
+  }
+  badge.className = 'badge badge-done';
+  badge.textContent = `${pdfs.length} PDF${pdfs.length > 1 ? 's' : ''}`;
+
+  const list = document.createElement('div'); list.className = 'pdf-list';
+  pdfs.forEach(pdf => {
+    const row = makePdfRow(pdf.url, pdf.title, 'scan', 'sc-checks');
+    list.appendChild(row);
+    scanPdfs.push(pdf);
+  });
+  body.innerHTML = ''; body.appendChild(list);
+  updateBulkBar('scan');
+}
+
+function renderScanError(index, msg) {
+  document.getElementById(`sc-spin-${index}`).style.display = 'none';
+  const badge = document.getElementById(`sc-badge-${index}`);
+  badge.className = 'badge badge-error'; badge.textContent = 'Error';
+  document.getElementById(`sc-body-${index}`).innerHTML = `<div class="error-msg">${msg}</div>`;
+}
+
+async function processScanUrl(url, index) {
+  if (isPdf(url)) {
+    document.getElementById(`sc-spin-${index}`).style.display = 'none';
+    const badge = document.getElementById(`sc-badge-${index}`);
+    badge.className = 'badge badge-done'; badge.textContent = 'Direct PDF';
+    const body = document.getElementById(`sc-body-${index}`);
+    const pdf = { url, title: filename(url) };
+    const list = document.createElement('div'); list.className = 'pdf-list';
+    list.appendChild(makePdfRow(url, pdf.title, 'scan', 'sc-checks'));
+    body.innerHTML = ''; body.appendChild(list);
+    scanPdfs.push(pdf);
+    updateBulkBar('scan');
+    return;
+  }
+  try {
+    renderScanCard(index, findPdfsInPage(await fetchHtml(url), url));
+  } catch (e) {
+    renderScanError(index, `Could not fetch: ${e.message}`);
+  }
+}
+
+async function startScan() {
+  const urls = parseUrls();
+  if (!urls.length) { alert('Enter at least one valid URL.'); return; }
+  scanPdfs = [];
+  const area = document.getElementById('scanResults');
+  area.innerHTML = '';
+  document.getElementById('scanBulkBar').style.display = 'none';
+  document.getElementById('scanBtn').disabled = true;
+  urls.forEach((url, i) => area.appendChild(makeScanCard(url, i)));
+  await Promise.all(urls.map((url, i) => processScanUrl(url, i)));
+  document.getElementById('scanBtn').disabled = false;
+}
+
+function clearScan() {
+  document.getElementById('urlInput').value = '';
+  document.getElementById('scanResults').innerHTML = '';
+  document.getElementById('scanBulkBar').style.display = 'none';
+  scanPdfs = [];
+}
+
+// ─────────────────────────────────────────────
+//  Section 2 — Keyword Search
+// ─────────────────────────────────────────────
+let searchPdfs = [];
+let searchAbort = false;
+
+// ── URL validation (skip trusted sources, HEAD-check the rest) ───────────────
+async function isLive(url) {
+  // arXiv and Semantic Scholar serve authoritative, always-valid URLs
+  if (/arxiv\.org|semanticscholar\.org|s3\.amazonaws\.com/i.test(url)) return true;
+  // Try direct HEAD (works when server allows CORS)
+  try {
+    const r = await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(4000) });
+    if (r.status !== 0) return r.ok;
+  } catch {}
+  // Fall back to proxy HEAD
+  try {
+    const r = await fetch(`https://corsproxy.io/?${encodeURIComponent(url)}`,
+      { method: 'HEAD', signal: AbortSignal.timeout(5000) });
+    return r.ok;
+  } catch {}
+  return null; // can't determine — allow through
+}
+
+// ── Search sources ────────────────────────────────────────────────────────────
+const SEARCH_SOURCES = [
+  {
+    async run(keyword, need) {
+      const r = await fetch(
+        `https://api.semanticscholar.org/graph/v1/paper/search` +
+        `?query=${encodeURIComponent(keyword)}&limit=${Math.min(need,100)}` +
+        `&fields=title,authors,openAccessPdf,year`,
+        { signal: AbortSignal.timeout(9000) }
+      );
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = await r.json();
+      return (d.data || [])
+        .filter(p => p.openAccessPdf?.url)
+        .map(p => ({
+          url: p.openAccessPdf.url,
+          title: p.title || 'Untitled',
+          meta: [(p.authors||[]).slice(0,2).map(a=>a.name).join(', '), p.year].filter(Boolean).join(' · '),
+          source: 'Semantic Scholar', trusted: true
+        }));
+    }
+  },
+  {
+    async run(keyword, need) {
+      const r = await fetch(
+        `https://export.arxiv.org/api/query` +
+        `?search_query=all:${encodeURIComponent(keyword)}` +
+        `&max_results=${Math.min(need,50)}&sortBy=relevance`,
+        { signal: AbortSignal.timeout(9000) }
+      );
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const xml = await r.text();
+      const doc = new DOMParser().parseFromString(xml, 'text/xml');
+      return [...doc.querySelectorAll('entry')].map(e => {
+        const rawId = e.querySelector('id')?.textContent?.trim() || '';
+        const title  = e.querySelector('title')?.textContent?.trim() || 'Untitled';
+        const authors = [...e.querySelectorAll('author name')].slice(0,2).map(a=>a.textContent).join(', ');
+        const pdfUrl = rawId.replace('http://arxiv.org/abs/','https://arxiv.org/pdf/')
+                            .replace('https://arxiv.org/abs/','https://arxiv.org/pdf/') + '.pdf';
+        return { url: pdfUrl, title, meta: authors, source: 'arXiv', trusted: true };
+      }).filter(p => p.url.includes('arxiv.org/pdf'));
+    }
+  },
+  {
+    async run(keyword, need) {
+      // Search IA, then resolve each item's real PDF filename via metadata API
+      const q = encodeURIComponent(`${keyword} AND mediatype:texts AND format:PDF`);
+      const r = await fetch(
+        `https://archive.org/advancedsearch.php?q=${q}` +
+        `&fl[]=identifier,title,creator,year&rows=${Math.min(need,10)}&output=json`,
+        { signal: AbortSignal.timeout(9000) }
+      );
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = await r.json();
+      const docs = d.response?.docs || [];
+      const resolved = await Promise.all(docs.map(async doc => {
+        try {
+          const m = await fetch(
+            `https://archive.org/metadata/${doc.identifier}/files`,
+            { signal: AbortSignal.timeout(5000) }
+          );
+          const files = (await m.json()).result || [];
+          const pdf = files.find(f => /\.pdf$/i.test(f.name) && f.source !== 'metadata')
+                   || files.find(f => /\.pdf$/i.test(f.name));
+          if (!pdf) return null;
+          return {
+            url: `https://archive.org/download/${doc.identifier}/${encodeURIComponent(pdf.name)}`,
+            title: doc.title || doc.identifier,
+            meta: [doc.creator, doc.year].filter(Boolean).join(' · '),
+            source: 'Internet Archive', trusted: true
+          };
+        } catch { return null; }
+      }));
+      return resolved.filter(Boolean);
+    }
+  },
+  {
+    async run(keyword, need) {
+      const html = await Promise.race([
+        fetchHtml(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(keyword + ' filetype:pdf')}`),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 7000))
+      ]);
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      const seen = new Set(); const results = [];
+      for (const a of doc.querySelectorAll('a[href]')) {
+        const href = a.getAttribute('href') || '';
+        let clean = href;
+        try {
+          const u = new URL(href, 'https://html.duckduckgo.com/');
+          clean = u.searchParams.get('uddg') ? decodeURIComponent(u.searchParams.get('uddg')) : u.href;
+        } catch { continue; }
+        if (!isPdf(clean) || seen.has(clean)) continue;
+        if (/duckduckgo\.com|bing\.com|google\.com/i.test(clean)) continue;
+        seen.add(clean);
+        results.push({ url: clean, title: a.textContent.trim() || filename(clean), meta: '', source: 'Web', trusted: false });
+        if (results.length >= need) break;
+      }
+      return results;
+    }
+  }
+];
+
+function setSearchStatus(msg, pct) {
+  document.getElementById('searchStatus').style.display = 'flex';
+  document.getElementById('searchStatusMsg').textContent = msg;
+  document.getElementById('searchProgressBar').style.width = `${pct}%`;
+}
+
+function hideSearchStatus() {
+  document.getElementById('searchStatus').style.display = 'none';
+}
+
+function scoreRelevance(pdf, keywords) {
+  const title = pdf.title.toLowerCase();
+  let score = 0;
+  const phrase = keywords.join(' ');
+  if (title.includes(phrase)) score += 30;
+  for (const w of keywords) {
+    if (title.includes(w)) score += 10;
+    if (title.startsWith(w)) score += 5;
+  }
+  return score;
+}
+
+async function startSearch() {
+  const raw = document.getElementById('searchKeyword').value.trim();
+  if (!raw) { alert('Enter a keyword to search for.'); return; }
+  const keyword = /\bpdf\b/i.test(raw) ? raw : raw + ' pdf';
+  const maxCount = parseInt(document.getElementById('maxPdfs').value);
+  const fetchCount = Math.round(maxCount * 1.5) + 5; // fetch more, then trim to best
+
+  searchAbort = false;
+  searchPdfs = [];
+  document.getElementById('searchResultsArea').innerHTML = '';
+  document.getElementById('searchBulkBar').style.display = 'none';
+  document.getElementById('searchBtn').disabled = true;
+  setSearchStatus(`Searching for "${raw}"…`, 10);
+
+  const seen = new Set();
+  const candidates = [];
+  const total = SEARCH_SOURCES.length;
+
+  for (let si = 0; si < total; si++) {
+    if (searchAbort) break;
+    const pct = 10 + Math.round((si / total) * 60);
+    setSearchStatus(`Searching… ${candidates.length} found so far`, pct);
+    try {
+      const results = await SEARCH_SOURCES[si].run(keyword, fetchCount);
+      for (const pdf of results) {
+        if (!seen.has(pdf.url)) { seen.add(pdf.url); candidates.push(pdf); }
+      }
+    } catch { /* source failed, move on */ }
+  }
+
+  // Validate untrusted URLs in parallel, drop confirmed 404s
+  setSearchStatus(`Verifying ${candidates.length} links…`, 75);
+  const checked = await Promise.all(
+    candidates.map(async pdf => {
+      if (pdf.trusted) return pdf;
+      const ok = await isLive(pdf.url);
+      return ok === false ? null : pdf; // drop only confirmed dead links
+    })
+  );
+  const live = checked.filter(Boolean);
+
+  // Rank by relevance, keep top maxCount
+  const kwWords = raw.toLowerCase().replace(/\bpdf\b/gi,'').trim().split(/\s+/).filter(Boolean);
+  const ranked = live
+    .map(p => ({ ...p, _score: scoreRelevance(p, kwWords) }))
+    .sort((a, b) => b._score - a._score)
+    .slice(0, maxCount);
+
+  searchPdfs = ranked;
+  setSearchStatus('Done', 100);
+  setTimeout(hideSearchStatus, 400);
+  document.getElementById('searchBtn').disabled = false;
+
+  if (!ranked.length) {
+    document.getElementById('searchResultsArea').innerHTML =
+      `<div class="empty-msg" style="margin-top:12px">No PDFs found for "<strong>${raw}</strong>". Try different keywords.</div>`;
+    return;
+  }
+
+  ranked.forEach(pdf => appendSearchResult(pdf));
+
+  const note = document.createElement('div');
+  note.className = 'result-count';
+  note.style.marginTop = '4px';
+  note.innerHTML = `Showing top <span>${ranked.length}</span> most relevant PDFs for "<strong style="color:#e2e8f0">${raw}</strong>"`;
+  document.getElementById('searchResultsArea').prepend(note);
+  updateBulkBar('search');
+}
+
+function appendSearchResult(pdf) {
+  let area = document.getElementById('searchResultsArea');
+  let list = area.querySelector('.pdf-list');
+  if (!list) { list = document.createElement('div'); list.className = 'pdf-list'; area.appendChild(list); }
+  list.appendChild(makePdfRow(pdf.url, pdf.title, 'search', 'sr-checks', pdf.source));
+  updateBulkBar('search');
+}
+
+function clearSearch() {
+  searchAbort = true;
+  searchPdfs = [];
+  document.getElementById('searchKeyword').value = '';
+  document.getElementById('searchResultsArea').innerHTML = '';
+  document.getElementById('searchBulkBar').style.display = 'none';
+  hideSearchStatus();
+  document.getElementById('searchBtn').disabled = false;
+}
+
+function selectAll() {
+  document.querySelectorAll('#sr-checks input[type=checkbox]').forEach(cb => cb.checked = true);
+  updateBulkBar('search');
+}
+
+// ─────────────────────────────────────────────
+//  Shared PDF row builder & bulk bar
+// ─────────────────────────────────────────────
+function makePdfRow(url, title, section, groupId, source) {
+  const row = document.createElement('div');
+  row.className = 'pdf-row';
+  const cbId = `cb-${Math.random().toString(36).slice(2)}`;
+  row.innerHTML = `
+    <div class="pdf-icon">📄</div>
+    <div class="pdf-info">
+      <div class="pdf-title" title="${title}">${title}</div>
+      <div class="pdf-url" title="${url}">${url}</div>
+      ${source ? `<div class="pdf-source">via ${source}</div>` : ''}
+    </div>
+    <div class="pdf-actions">
+      <input type="checkbox" id="${cbId}" data-url="${url}" data-name="${filename(url)}"
+             onchange="updateBulkBar('${section}')">
+      <button class="btn-primary btn-sm" onclick="downloadOne('${url.replace(/'/g,"\\'")}','${filename(url).replace(/'/g,"\\'")}')">Download</button>
+    </div>`;
+  // tag checkbox with group id for bulk select
+  row.querySelector('input[type=checkbox]').id = cbId;
+
+  // attach to named group div (created lazily)
+  let group = document.getElementById(groupId);
+  if (!group) {
+    group = document.createElement('div');
+    group.id = groupId;
+    group.style.display = 'contents';
+    document.getElementById(section === 'scan' ? 'scanResults' : 'searchResultsArea').appendChild(group);
+  }
+  return row;
+}
+
+function updateBulkBar(section) {
+  const groupId = section === 'scan' ? 'sc-checks' : 'sr-checks';
+  const barId   = section === 'scan' ? 'scanBulkBar' : 'searchBulkBar';
+  const countId = section === 'scan' ? 'scanSelectedCount' : 'searchSelectedCount';
+  const boxes   = [...document.querySelectorAll(`#${groupId} input[type=checkbox]`)];
+
+  // use a broader selector since group divs are 'contents'
+  const allBoxes = section === 'scan'
+    ? [...document.querySelectorAll('#scanResults input[type=checkbox]')]
+    : [...document.querySelectorAll('#searchResultsArea input[type=checkbox]')];
+
+  const checked = allBoxes.filter(cb => cb.checked).length;
+  const bar = document.getElementById(barId);
+  bar.style.display = allBoxes.length ? 'flex' : 'none';
+  document.getElementById(countId).textContent = checked;
+
+  // fix downloadSelected to use correct selector
+  bar.querySelector('.btn-primary').onclick = () => {
+    const selected = allBoxes.filter(cb => cb.checked);
+    if (!selected.length) { alert('Select at least one PDF.'); return; }
+    selected.forEach((cb, i) => setTimeout(() => downloadOne(cb.dataset.url, cb.dataset.name), i * 350));
+  };
+}
+</script>
+</body>
+</html>
