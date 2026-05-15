@@ -451,7 +451,7 @@ const SEARCH_SOURCES = [
       const r = await fetch(
         `https://api.semanticscholar.org/graph/v1/paper/search` +
         `?query=${encodeURIComponent(keyword)}&limit=${Math.min(need,100)}` +
-        `&fields=title,authors,openAccessPdf,year${yearParam}`,
+        `&fields=title,authors,openAccessPdf,year,abstract${yearParam}`,
         { signal: AbortSignal.timeout(9000) }
       );
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -462,6 +462,7 @@ const SEARCH_SOURCES = [
           url: p.openAccessPdf.url,
           title: p.title || 'Untitled',
           meta: [(p.authors||[]).slice(0,2).map(a=>a.name).join(', '), p.year].filter(Boolean).join(' · '),
+          abstract: p.abstract || '',
           source: 'Semantic Scholar', trusted: true, year: p.year || null
         }));
     }
@@ -483,9 +484,10 @@ const SEARCH_SOURCES = [
         const authors = [...e.querySelectorAll('author name')].slice(0,2).map(a=>a.textContent).join(', ');
         const published = e.querySelector('published')?.textContent?.trim() || '';
         const year = published ? new Date(published).getFullYear() : null;
+        const abstract = e.querySelector('summary')?.textContent?.trim() || '';
         const pdfUrl = rawId.replace('http://arxiv.org/abs/','https://arxiv.org/pdf/')
                             .replace('https://arxiv.org/abs/','https://arxiv.org/pdf/') + '.pdf';
-        return { url: pdfUrl, title, meta: [authors, year].filter(Boolean).join(' · '), source: 'arXiv', trusted: true, year };
+        return { url: pdfUrl, title, meta: [authors, year].filter(Boolean).join(' · '), abstract, source: 'arXiv', trusted: true, year };
       }).filter(p => p.url.includes('arxiv.org/pdf'));
     }
   },
@@ -562,23 +564,26 @@ function hideSearchStatus() {
 
 function scoreRelevance(pdf, keywords) {
   if (!keywords.length) return 1;
-  const title = (pdf.title || '').toLowerCase();
-  const meta  = (pdf.meta  || '').toLowerCase();
+  const title    = (pdf.title    || '').toLowerCase();
+  const meta     = (pdf.meta     || '').toLowerCase();
+  const abstract = (pdf.abstract || '').toLowerCase();
   let score = 0, titleHits = 0;
   const phrase = keywords.join(' ');
 
-  if (title.includes(phrase)) score += 50;
-  else if (meta.includes(phrase)) score += 15;
+  if (title.includes(phrase))         score += 50;
+  else if (abstract.includes(phrase)) score += 20;
+  else if (meta.includes(phrase))     score += 15;
 
   for (const w of keywords) {
     if (w.length < 2) continue;
     const re = new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')}`, 'i');
-    if (re.test(title))     { score += 15; titleHits++; }
-    else if (re.test(meta)) { score += 4; }
+    if (re.test(title))         { score += 15; titleHits++; }
+    else if (re.test(abstract)) { score += 8; }
+    else if (re.test(meta))     { score += 4; }
   }
 
   if (titleHits === keywords.length && keywords.length > 0) score += 20;
-  return score; // 0 = no keyword overlap — filtered out
+  return score; // 0 = no keyword overlap anywhere — filtered out
 }
 
 async function startSearch() {
@@ -588,7 +593,7 @@ async function startSearch() {
   const maxCount = parseInt(document.getElementById('maxPdfs').value);
   const timeRangeYears = parseInt(document.getElementById('timeRange').value);
   const cutoffYear = timeRangeYears > 0 ? new Date().getFullYear() - timeRangeYears : 0;
-  const fetchCount = Math.round(maxCount * 1.5) + 5;
+  const fetchCount = Math.round(maxCount * 3) + 15;
 
   searchAbort = false;
   searchPdfs = [];
@@ -629,11 +634,11 @@ async function startSearch() {
     ? live.filter(p => !p.year || p.year >= cutoffYear)
     : live;
 
-  // Rank by relevance; only hard-drop untrusted web results with zero keyword overlap
+  // Rank by relevance; drop anything with zero keyword overlap in title, abstract, or meta
   const kwWords = raw.toLowerCase().replace(/\bpdf\b/gi,'').trim().split(/\s+/).filter(Boolean);
   const ranked = yearFiltered
     .map(p => ({ ...p, _score: scoreRelevance(p, kwWords) }))
-    .filter(p => p.trusted || p._score > 0)
+    .filter(p => p._score > 0)
     .sort((a, b) => b._score - a._score)
     .slice(0, maxCount);
 
